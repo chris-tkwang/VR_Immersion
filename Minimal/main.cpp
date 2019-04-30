@@ -488,6 +488,7 @@ bool isTouched = false;
 int set_Cubesize = 1;
 int tracking_lag = 0;
 int render_lag = 0;
+bool superRotation = false;
 
 class RiftApp : public GlfwApp, public RiftManagerApp
 {
@@ -504,6 +505,7 @@ private:
   ovrEyeRenderDesc _eyeRenderDescs[2];
 
   mat4 _eyeProjections[2];
+  mat4 projection_old[2];
 
   ovrLayerEyeFov _sceneLayer;
   ovrViewScaleDesc _viewScaleDesc;
@@ -518,6 +520,7 @@ private:
 
   double iod, iod_origin;
   int set_iod = 1;
+  int count = 0;
 
 public:
 
@@ -735,6 +738,11 @@ protected:
 				  button_X++;
 			  }
 		  }
+
+		  else if ((inputState.Buttons & ovrButton_Y) && !isPressed) {
+			  isPressed = true;
+			  superRotation = !superRotation;
+		  }
 	  }
 
 	  //change iod
@@ -750,6 +758,13 @@ protected:
 	  _viewScaleDesc.HmdToEyePose[0].Position.x = (float)(-iod / 2);
 	  _viewScaleDesc.HmdToEyePose[1].Position.x = (float)(iod / 2);
 	  set_iod = 1;
+
+	  if (count == 0) {
+		  count = render_lag;
+	  }
+	  else {
+		  count--;
+	  }
   }
 
   void draw() final override
@@ -757,8 +772,18 @@ protected:
     ovrPosef eyePoses[2];
     ovr_GetEyePoses(_session, frame, true, _viewScaleDesc.HmdToEyePose, eyePoses, &_sceneLayer.SensorSampleTime);
 
-	left_pos_new = ovr::toGlm(eyePoses[ovrEye_Left]);
-	right_pos_new = ovr::toGlm(eyePoses[ovrEye_Right]);
+	if (count == 0) {
+		left_pos_new = ovr::toGlm(eyePoses[ovrEye_Left]);
+		right_pos_new = ovr::toGlm(eyePoses[ovrEye_Right]);
+		projection_old[0] = _eyeProjections[0];
+		projection_old[1] = _eyeProjections[1];
+	}
+	else {
+		left_pos_new = left_pos_old;
+		right_pos_new = right_pos_old;
+		_eyeProjections[0] = projection_old[0];
+		_eyeProjections[1] = projection_old[1];
+	}
 
 	if (button_B == 2) {
 		left_pos_new[3] = left_pos_old[3];
@@ -1009,7 +1034,6 @@ public:
 			return positions[0];
 		}
 	}
-
 
 };
 
