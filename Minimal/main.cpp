@@ -486,7 +486,8 @@ int button_X = 1;
 bool isPressed = false;
 bool isTouched = false;
 int set_Cubesize = 1;
-int lag = 0;
+int tracking_lag = 0;
+int render_lag = 0;
 
 class RiftApp : public GlfwApp, public RiftManagerApp
 {
@@ -639,20 +640,35 @@ protected:
   void update() final override {
 	  ovrInputState inputState;
 	  if (OVR_SUCCESS(ovr_GetInputState(_session, ovrControllerType_Touch, &inputState))) {
-		  if (inputState.IndexTrigger[ovrHand_Left] < 0.01f && inputState.IndexTrigger[ovrHand_Right] < 0.01f) {
+
+		  //Triggers
+		  if (inputState.IndexTrigger[ovrHand_Left] < 0.01f && inputState.IndexTrigger[ovrHand_Right] < 0.01f
+				&& inputState.HandTrigger[ovrHand_Left] < 0.01f && inputState.HandTrigger[ovrHand_Right] < 0.01f) {
 			  isTouched = false;
 		  }
 
-		  if (inputState.IndexTrigger[ovrHand_Left] > 0.1f && lag > 0 && !isTouched) {
+		  if (inputState.IndexTrigger[ovrHand_Left] > 0.1f && tracking_lag > 0 && !isTouched) {
 			  isTouched = true;
-			  lag--;
-			  printf("Tracking lag: %d frames\n", lag);
+			  tracking_lag--;
+			  printf("Tracking lag: %d frames\n", tracking_lag);
 		  }
 
-		  if (inputState.IndexTrigger[ovrHand_Right] > 0.1f && lag < 30 && !isTouched) {
+		  if (inputState.IndexTrigger[ovrHand_Right] > 0.1f && tracking_lag < 29 && !isTouched) {
 			  isTouched = true;
-			  lag++;
-			  printf("Tracking lag: %d frames\n", lag);
+			  tracking_lag++;
+			  printf("Tracking lag: %d frames\n", tracking_lag);
+		  }
+
+		  if (inputState.HandTrigger[ovrHand_Left] > 0.1f && render_lag > 0 && !isTouched) {
+			  isTouched = true;
+			  render_lag--;
+			  printf("Rendering delay: %d frames\n", render_lag);
+		  }
+
+		  if (inputState.HandTrigger[ovrHand_Right] > 0.1f && render_lag < 10 && !isTouched) {
+			  isTouched = true;
+			  render_lag++;
+			  printf("Rendering delay: %d frames\n", render_lag);
 		  }
 
 		  //update iod
@@ -682,6 +698,7 @@ protected:
 			  set_Cubesize = 4;
 		  }
 
+		  //Buttons
 		  if (!inputState.Buttons) {
 			  isPressed = false;
 		  }
@@ -961,6 +978,41 @@ public:
   }
 };
 
+//Ring buffer
+class Buffer {
+	vec3 positions[30];
+	int read, write, num;
+
+public:
+	Buffer() {
+		read = 0;
+		write = 0;
+		num = 0;
+	}
+
+	void push(vec3 position) {
+		positions[write] = position;
+		write = (write + 1) % 30;
+		if (num < 30) {
+			num++;
+		}
+	}
+
+	vec3 pop(int lag) {
+		if (num == 30) {
+			int i = (read - lag + 30) % 30;
+			read = (read + 1) % 30;
+			return positions[i];
+		}
+		
+		else {
+			return positions[0];
+		}
+	}
+
+
+};
+
 // An example application that renders a simple cube
 class ExampleApp : public RiftApp
 {
@@ -975,6 +1027,7 @@ class ExampleApp : public RiftApp
   ovrVector3f handPosition[2];
   
   vector<vec3> positions;
+  std::shared_ptr<Buffer> buffer;
 
 public:
   ExampleApp()
@@ -990,6 +1043,7 @@ protected:
     ovr_RecenterTrackingOrigin(_session);
     scene = std::shared_ptr<Scene>(new Scene());
 	cursor = std::shared_ptr<Cursor>(new Cursor());
+	buffer = std::shared_ptr<Buffer>(new Buffer());
   }
 
   void shutdownGl() override
@@ -1008,10 +1062,10 @@ protected:
 	handPosition[0] = handPoses[0].Position;
 	handPosition[1] = handPoses[1].Position;
 
-	//positions.push_back(vec3(handPosition[ovrHand_Right].x, handPosition[ovrHand_Right].y, handPosition[ovrHand_Right].z));
+	buffer->push(vec3(handPosition[ovrHand_Right].x, handPosition[ovrHand_Right].y, handPosition[ovrHand_Right].z));
 
     scene->render(projection, glm::inverse(headPose), isLeft);
-	cursor->render(projection, glm::inverse(headPose), vec3(handPosition[ovrHand_Right].x, handPosition[ovrHand_Right].y, handPosition[ovrHand_Right].z));
+	cursor->render(projection, glm::inverse(headPose), buffer->pop(tracking_lag));
   }
 };
 
