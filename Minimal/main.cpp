@@ -749,7 +749,7 @@ protected:
 	  if (set_iod == 3 && iod < 0.3) {
 		  iod += 0.01;
 	  }
-	  else if (set_iod == 2 && iod > -0.1) {
+	  else if (set_iod == 2 && iod > -0.3) {
 		  iod -= 0.01;
 	  }
 	  else if (set_iod == 4) {
@@ -1037,6 +1037,15 @@ public:
 
 };
 
+mat3 computeRotation(float theta_x, float theta_y, float theta_z) {
+	mat3 X(1.0f, 0.0f, 0.0f, 0.0f, cosf(theta_x), -sinf(theta_x), 0.0f, sinf(theta_x), cosf(theta_x));
+	mat3 Y(cosf(theta_y), 0.0f, sinf(theta_y), 0.0f, 1.0f, 0.0f, -sinf(theta_y), 0.0f, cosf(theta_y));
+	mat3 Z(cosf(theta_z), -sinf(theta_z), 0.0f, sinf(theta_z), cosf(theta_z), 0.0f, 0.0f, 0.0f, 1.0f);
+
+	mat3 R = Z * Y * X;
+	return R;
+}
+
 // An example application that renders a simple cube
 class ExampleApp : public RiftApp
 {
@@ -1088,8 +1097,25 @@ protected:
 
 	buffer->push(vec3(handPosition[ovrHand_Right].x, handPosition[ovrHand_Right].y, handPosition[ovrHand_Right].z));
 
-    scene->render(projection, glm::inverse(headPose), isLeft);
-	cursor->render(projection, glm::inverse(headPose), buffer->pop(tracking_lag));
+	if (!superRotation) {
+		scene->render(projection, glm::inverse(headPose), isLeft);
+		cursor->render(projection, glm::inverse(headPose), buffer->pop(tracking_lag));
+	}
+    
+	else {
+		mat3 R(headPose[0], headPose[1], headPose[2]);
+		float theta_1 = atan2f(R[1][2], R[2][2]);
+		float c2 = sqrt(pow(R[0][0], 2) + pow(R[0][1], 2));
+		float theta_2 = atan2f(-R[0][2], c2);
+		float theta_3 = atan2f(sinf(theta_1)*R[2][0] - cosf(theta_1)*R[1][0], cosf(theta_1)*R[1][1] - sinf(theta_1)*R[2][1]);
+
+		mat3 new_R = computeRotation(theta_1, -2.0f * theta_2, theta_3);
+		mat4 new_headPose = mat4(new_R);
+		new_headPose[3] = headPose[3];
+
+		scene->render(projection, glm::inverse(new_headPose), isLeft);
+		cursor->render(projection, glm::inverse(new_headPose), buffer->pop(tracking_lag));
+	}
   }
 };
 
